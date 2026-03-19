@@ -43,6 +43,11 @@ const supabase = createClient(
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhZWdsZ216dXNhc2J4YXRqa2psIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjE0MTM0MCwiZXhwIjoyMDg3NzE3MzQwfQ.P-F1jvG_XrXZ9oyXciOV3YW1dn8xG4Z6mSLr2U5Oy6c",
 );
 
+// Deduplication cache: Store recent mission notifications to prevent duplicates
+// Key: missionNumber, Value: {timestamp, count}
+const notificationCache = new Map();
+const DEDUPE_WINDOW_MS = 5000; // 5 second window to catch duplicate requests
+
 // Send notification to specific user
 app.post("/send-notification", async (req, res) => {
   try {
@@ -110,7 +115,7 @@ app.post("/send-notification-bulk", async (req, res) => {
 // Send notification to ALL users
 app.post("/send-notification-all", async (req, res) => {
   try {
-    const { title, body, data, missionNumber } = req.body;
+    const { title, body, data, missionNumber, requestId } = req.body;
 
     console.log("═══════════════════════════════════════════════════");
     console.log("📢 NOTIFICATION REQUEST RECEIVED");
@@ -118,7 +123,47 @@ app.post("/send-notification-all", async (req, res) => {
     console.log("Body:", body);
     console.log("Data:", data);
     console.log("Mission Number:", missionNumber);
+    console.log("Request ID:", requestId);
     console.log("═══════════════════════════════════════════════════");
+
+    // DEDUPLICATION CHECK: Prevent sending same mission notification twice
+    if (missionNumber) {
+      const now = Date.now();
+      const cached = notificationCache.get(missionNumber);
+
+      if (cached && now - cached.timestamp < DEDUPE_WINDOW_MS) {
+        console.log(
+          `⚠️  DUPLICATE DETECTED! Mission ${missionNumber} already sent ${cached.count} time(s) in last ${DEDUPE_WINDOW_MS}ms`,
+        );
+        console.log(
+          "🚫 BLOCKING DUPLICATE REQUEST TO PREVENT 2X NOTIFICATIONS",
+        );
+        return res.json({
+          success: false,
+          blocked: true,
+          reason: "Duplicate notification request (deduped)",
+          sentCount: 0,
+        });
+      }
+
+      // Update cache
+      notificationCache.set(missionNumber, {
+        timestamp: now,
+        count: (cached?.count || 0) + 1,
+        requestId,
+      });
+      console.log(
+        `✅ Added to dedupe cache: ${missionNumber} (request #${requestId})`,
+      );
+
+      // Clean up old entries (older than 30 seconds)
+      for (const [key, value] of notificationCache.entries()) {
+        if (now - value.timestamp > 30000) {
+          notificationCache.delete(key);
+          console.log(`🧹 Cleaned cache entry: ${key}`);
+        }
+      }
+    }
 
     if (!title || !body) {
       console.log("❌ Missing required fields: title or body");
