@@ -2,13 +2,34 @@ const express = require("express");
 const admin = require("firebase-admin");
 const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
 // Initialize Firebase Admin SDK
-const serviceAccount = require("./firebase-service-account.json");
+let serviceAccount;
+
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Production: Read from environment variable
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    console.log("✅ Loading Firebase credentials from environment variable");
+  } catch (error) {
+    console.error("❌ Error parsing FIREBASE_SERVICE_ACCOUNT:", error.message);
+    process.exit(1);
+  }
+} else if (fs.existsSync("./firebase-service-account.json")) {
+  // Development: Read from local file
+  serviceAccount = require("./firebase-service-account.json");
+  console.log("✅ Loading Firebase credentials from local file");
+} else {
+  console.error(
+    "❌ Firebase credentials not found! Set FIREBASE_SERVICE_ACCOUNT environment variable or create firebase-service-account.json",
+  );
+  process.exit(1);
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
