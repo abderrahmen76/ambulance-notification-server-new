@@ -308,6 +308,140 @@ app.post("/send-notification-all", async (req, res) => {
   }
 });
 
+// Store last processed notification ID to avoid re-processing
+let lastProcessedNotificationId = null;
+
+// Watch app_notifications table for new notifications
+async function watchNotifications() {
+  console.log(
+    "\n🔍 Starting notification watcher for app_notifications table...",
+  );
+
+  try {
+    // Get initial max ID
+    const { data: maxData } = await supabase
+      .from("app_notifications")
+      .select("id")
+      .order("id", { ascending: false })
+      .limit(1);
+
+    if (maxData && maxData.length > 0) {
+      lastProcessedNotificationId = maxData[0].id;
+      console.log(
+        `📌 Starting from notification ID: ${lastProcessedNotificationId}`,
+      );
+    }
+
+    // Poll for new notifications every 2 seconds
+    setInterval(async () => {
+      try {
+        // Query for notifications newer than the last one we processed
+        let query = supabase
+          .from("app_notifications")
+          .select("id, title, body, type, data, created_at, user_id")
+          .order("id", { ascending: true });
+
+        if (lastProcessedNotificationId) {
+          query = query.gt("id", lastProcessedNotificationId);
+        }
+
+        const { data: newNotifications, error } = await query.limit(10);
+
+        if (error) {
+          console.error("❌ Error polling notifications:", error);
+          return;
+        }
+
+        if (newNotifications && newNotifications.length > 0) {
+          console.log(
+            `\n📨 Found ${newNotifications.length} new notification(s) to process`,
+          );
+
+          for (const notification of newNotifications) {
+            await processNotification(notification);
+            lastProcessedNotificationId = notification.id;
+          }
+        }
+      } catch (error) {
+        console.error("❌ Error in notification polling loop:", error);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    console.log("✅ Notification watcher started!");
+  } catch (error) {
+    console.error("❌ Error starting notification watcher:", error);
+  }
+}
+
+// Process a single notification and send FCM
+async function processNotification(notification) {
+  try {
+    const { id, title, body, type, data, user_id } = notification;
+
+    console.log(`\n─────────────────────────────────────────`);
+    console.log(`📬 Processing notification ID: ${id}`);
+    console.log(`Type: ${type}`);
+    console.log(`Title: ${title}`);
+    console.log(`Body: ${body}`);
+    console.log(`User ID: ${user_id}`);
+    console.log(`─────────────────────────────────────────`);
+
+    // Get the user's FCM token
+    const { data: fcmData, error: fcmError } = await supabase
+      .from("user_fcm_tokens")
+      .select("fcm_token, id")
+      .eq("user_id", user_id || data?.user_id)
+      .limit(1);
+
+    if (fcmError || !fcmData || fcmData.length === 0) {
+      console.warn(`⚠️  No FCM token found for user: ${user_id}`);
+      return;
+    }
+
+    const fcmToken = fcmData[0].fcm_token;
+    console.log(`✅ Found FCM token: ${fcmToken.substring(0, 50)}...`);
+
+    // Build the FCM message
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      data: {
+        type: type || "",
+        ...(data || {}),
+      },
+      android: {
+        priority: "high",
+        notification: {
+          title: title,
+          body: body,
+          color: "#2962FF",
+          sound: "default",
+          channelId: "ambulance_channel",
+          notificationPriority: "PRIORITY_HIGH",
+          vibrateTimingsMillis: [500, 300, 500],
+          lightSettings: {
+            color: "#2962FF",
+            lightOnDurationMillis: 500,
+            lightOffDurationMillis: 500,
+          },
+        },
+      },
+      token: fcmToken,
+    };
+
+    // Send the notification
+    const response = await admin.messaging().send(message);
+    console.log(`✅ FCM notification sent! Message ID: ${response}`);
+  } catch (error) {
+    console.error(`❌ Error processing notification:`, error.message);
+  }
+}
+
+// Start the watcher
+watchNotifications();
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Notification server running on port ${PORT}`);
