@@ -376,10 +376,12 @@ async function watchNotifications() {
 // Process a single notification and send FCM
 async function processNotification(notification) {
   try {
-    const { id, title, body, type, data } = notification;
+    const { id, title, type, data } = notification;
+    let { body } = notification;
 
     // Extract user_id from the data JSON field
     const userId = data?.user_id;
+    const ambulanceName = data?.ambulance_name;
 
     console.log(`\n─────────────────────────────────────────`);
     console.log(`📬 Processing notification ID: ${id}`);
@@ -387,11 +389,19 @@ async function processNotification(notification) {
     console.log(`Title: ${title}`);
     console.log(`Body: ${body}`);
     console.log(`User ID: ${userId}`);
+    console.log(`Ambulance: ${ambulanceName}`);
     console.log(`─────────────────────────────────────────`);
 
     if (!userId) {
       console.warn(`⚠️  No user_id found in notification data`);
       return;
+    }
+
+    // Enhance body with ambulance info for equipment rentals
+    if (type === "equipment_rented" && ambulanceName) {
+      body = `${body} (${ambulanceName})`;
+    } else if (type === "equipment_returned" && ambulanceName) {
+      body = `${body} (${ambulanceName})`;
     }
 
     // Get the user's FCM token
