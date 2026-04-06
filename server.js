@@ -216,10 +216,9 @@ app.post("/send-notification-all", async (req, res) => {
             body: body,
             // Ambulance blue color (#2962FF) - applied to the small icon
             color: "#2962FF",
-            // Sound configuration
-            sound: "default",
-            // Channel ID must match Android settings
-            channelId: "ambulance_channel",
+            // NO sound parameter - uses channel default (mission_alert.mp3)
+            // Channel ID must match Android settings in Flutter app
+            channelId: "ambulance_channel_all",
             // Notification priority
             notificationPriority: "PRIORITY_HIGH",
             // Vibration pattern (ms on, off, on)
