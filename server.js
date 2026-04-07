@@ -293,7 +293,6 @@ app.post("/send-notification-all", async (req, res) => {
         };
 
         // AUTO-CLEANUP: Remove invalid tokens from database
-        const failedResults = results.filter((r) => r.error);
         if (failedResults.length > 0) {
           console.log(
             `\n🧹 AUTO-CLEANUP: Removing ${failedResults.length} invalid tokens from database...`,
