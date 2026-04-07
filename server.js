@@ -266,15 +266,60 @@ app.post("/send-notification-all", async (req, res) => {
             admin
               .messaging()
               .send(msg)
-              .catch((err) => ({ error: err })),
+              .catch((err) => ({ error: err, token: msg.token })),
           ),
         );
+
+        // Log detailed error information for failed tokens
+        const failedResults = results.filter((r) => r.error);
+        if (failedResults.length > 0) {
+          console.log(
+            `\n⚠️  ${failedResults.length} FAILED TOKENS - Error Details:`,
+          );
+          failedResults.forEach((result, idx) => {
+            const errorCode = result.error?.code || "UNKNOWN";
+            const errorMsg = result.error?.message || "No message";
+            const token = result.token?.substring(0, 30) + "...";
+            console.log(
+              `   [${idx + 1}] ${token} | Code: ${errorCode} | ${errorMsg}`,
+            );
+          });
+        }
 
         response = {
           successCount: results.filter((r) => !r.error).length,
           failureCount: results.filter((r) => r.error).length,
           responses: results,
         };
+
+        // AUTO-CLEANUP: Remove invalid tokens from database
+        const failedResults = results.filter((r) => r.error);
+        if (failedResults.length > 0) {
+          console.log(
+            `\n🧹 AUTO-CLEANUP: Removing ${failedResults.length} invalid tokens from database...`,
+          );
+          const failedTokens = failedResults.map((r) => r.token);
+
+          try {
+            // Remove tokens that failed with "invalid registration token" or "mismatched token"
+            const { error: deleteError } = await supabase
+              .from("user_fcm_tokens")
+              .delete()
+              .in("fcm_token", failedTokens);
+
+            if (deleteError) {
+              console.log(
+                `   ⚠️  Could not auto-cleanup: ${deleteError.message}`,
+              );
+            } else {
+              console.log(
+                `   ✅ Removed ${failedTokens.length} invalid tokens from database`,
+              );
+            }
+          } catch (cleanupError) {
+            console.log(`   ⚠️  Cleanup error: ${cleanupError.message}`);
+          }
+        }
       }
     } catch (methodError) {
       // If all methods fail, return a helpful error
