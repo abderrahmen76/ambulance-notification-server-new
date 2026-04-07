@@ -48,6 +48,45 @@ const supabase = createClient(
 const notificationCache = new Map();
 const DEDUPE_WINDOW_MS = 5000; // 5 second window to catch duplicate requests
 
+// ========== CONFIG ENDPOINT ==========
+// Provides notification configuration (sound version, URL, etc.)
+// Called by mobile app to check for updated notification sounds
+app.get("/api/notification-config", async (req, res) => {
+  try {
+    console.log("[CONFIG] Fetching notification configuration...");
+
+    // Fetch config from Supabase
+    const { data, error } = await supabase
+      .from("config")
+      .select("sound_version, sound_url")
+      .eq("id", 1)
+      .single();
+
+    if (error) {
+      console.error(
+        "[CONFIG] ⚠️  Error fetching config from database:",
+        error.message,
+      );
+      // Return hardcoded defaults if database fails
+      return res.json({
+        version: 1,
+        url: "https://aaeglgmzusasbxatjkjl.supabase.co/storage/v1/object/public/notification-sounds/mission_alert.mp3",
+      });
+    }
+
+    console.log(
+      `[CONFIG] ✅ Returning config - Version: ${data.sound_version}`,
+    );
+    res.json({
+      version: data.sound_version || 1,
+      url: data.sound_url,
+    });
+  } catch (error) {
+    console.error("[CONFIG] ❌ Unexpected error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Send notification to specific user
 app.post("/send-notification", async (req, res) => {
   try {
